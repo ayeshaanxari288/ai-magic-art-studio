@@ -400,42 +400,34 @@ if "history" not in st.session_state:
 
 
 def call_api(prompt, negative_prompt, ratio, style_key, seed):
-    # API key comes from Streamlit secrets — users never see it
-    api_key = "sk-zQyGnqarap56wDp3bXA9u4pnmIwhYI9FL6b2nZWyAg3JyPAH"
-
+    api_key = st.secrets["HF_API_KEY"]
     style_value = STYLE_OPTIONS[style_key]
 
-    payload = {
-        "prompt":          prompt,
-        "negative_prompt": negative_prompt,
-        "aspect_ratio":    ratio,
-        "output_format":   "png",
-        "seed":            int(seed),
-    }
-    if style_value:
-        payload["style_preset"] = style_value
+    HF_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
 
-    headers = {
-        "authorization": f"Bearer {api_key}",
-        "accept":        "image/*",
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "negative_prompt": negative_prompt,
+            "seed": int(seed),
+        }
     }
 
     for attempt in range(1, MAX_RETRY + 1):
         try:
             response = requests.post(
-                API_URL,
+                HF_URL,
                 headers = headers,
-                files   = {"none": ""},
-                data    = payload,
+                json    = payload,
                 timeout = (3.05, 90),
             )
 
             if response.status_code == 200:
-                if response.headers.get("finish-reason") == "FILTER":
-                    return None, "Oops! This prompt was blocked by content filter. Please try a different description."
                 return response, None
 
-            if response.status_code in [429, 503]:
+            if response.status_code == 503:
                 wait = (2 ** attempt) + random.uniform(0, 1)
                 time.sleep(wait)
                 continue
@@ -443,21 +435,16 @@ def call_api(prompt, negative_prompt, ratio, style_key, seed):
             if response.status_code == 401:
                 return None, "API key is invalid. Please contact the administrator."
 
-            if response.status_code == 400:
-                msg = response.json().get("message", "Bad request.")
-                return None, f"Request error: {msg}"
-
             return None, f"Unexpected server error (HTTP {response.status_code}). Please try again."
 
         except requests.exceptions.ConnectTimeout:
             return None, "Connection timed out. Please check your internet connection."
 
         except requests.exceptions.ReadTimeout:
-            wait = (2 ** attempt) + random.uniform(0, 1)
-            time.sleep(wait)
+            time.sleep((2 ** attempt) + random.uniform(0, 1))
             continue
 
-    return None, "Server is busy. All retry attempts failed. Please try again in a few minutes."
+    return None, "Server is busy. Please try again in a few minutes."
 
 
 def save_and_verify(response):
