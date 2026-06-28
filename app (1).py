@@ -400,37 +400,40 @@ if "history" not in st.session_state:
 
 
 def call_api(prompt, negative_prompt, ratio, style_key, seed):
-    api_key = st.secrets["HF_API_KEY"]
-
-    HF_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "x-wait-for-model": "true",
-    }
+    api_key = st.secrets["STABILITY_API_KEY"]
+    style_value = STYLE_OPTIONS[style_key]
 
     payload = {
-        "inputs": prompt + ", high quality, detailed",
-        "parameters": {
-            "num_inference_steps": 4,
-            "seed": int(seed),
-        }
+        "prompt":          prompt,
+        "negative_prompt": negative_prompt,
+        "aspect_ratio":    ratio,
+        "output_format":   "png",
+        "seed":            int(seed),
+    }
+    if style_value:
+        payload["style_preset"] = style_value
+
+    headers = {
+        "authorization": f"Bearer {api_key}",
+        "accept":        "image/*",
     }
 
     for attempt in range(1, MAX_RETRY + 1):
         try:
             response = requests.post(
-                HF_URL,
+                API_URL,
                 headers = headers,
-                json    = payload,
-                timeout = (5, 120),
+                files   = {"none": ""},
+                data    = payload,
+                timeout = (3.05, 90),
             )
 
             if response.status_code == 200:
+                if response.headers.get("finish-reason") == "FILTER":
+                    return None, "Oops! This prompt was blocked. Please try a different description."
                 return response, None
 
-            if response.status_code in [503, 500]:
+            if response.status_code in [429, 503]:
                 wait = (2 ** attempt) + random.uniform(0, 1)
                 time.sleep(wait)
                 continue
@@ -438,8 +441,12 @@ def call_api(prompt, negative_prompt, ratio, style_key, seed):
             if response.status_code == 401:
                 return None, "API key is invalid. Please contact the administrator."
 
-            if response.status_code == 429:
-                return None, "Too many requests. Please wait a moment and try again."
+            if response.status_code == 402:
+                return None, "Credits finished. Please contact the administrator."
+
+            if response.status_code == 400:
+                msg = response.json().get("message", "Bad request.")
+                return None, f"Request error: {msg}"
 
             return None, f"Unexpected server error (HTTP {response.status_code}). Please try again."
 
@@ -447,7 +454,8 @@ def call_api(prompt, negative_prompt, ratio, style_key, seed):
             return None, "Connection timed out. Please check your internet connection."
 
         except requests.exceptions.ReadTimeout:
-            time.sleep((2 ** attempt) + random.uniform(0, 1))
+            wait = (2 ** attempt) + random.uniform(0, 1)
+            time.sleep(wait)
             continue
 
         except requests.exceptions.ConnectionError:
