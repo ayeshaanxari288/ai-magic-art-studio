@@ -401,16 +401,19 @@ if "history" not in st.session_state:
 
 def call_api(prompt, negative_prompt, ratio, style_key, seed):
     api_key = st.secrets["HF_API_KEY"]
-    style_value = STYLE_OPTIONS[style_key]
 
-    HF_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+    HF_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
 
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "x-wait-for-model": "true",
+    }
 
     payload = {
-        "inputs": prompt,
+        "inputs": prompt + ", high quality, detailed",
         "parameters": {
-            "negative_prompt": negative_prompt,
+            "num_inference_steps": 4,
             "seed": int(seed),
         }
     }
@@ -421,19 +424,22 @@ def call_api(prompt, negative_prompt, ratio, style_key, seed):
                 HF_URL,
                 headers = headers,
                 json    = payload,
-                timeout = (3.05, 90),
+                timeout = (5, 120),
             )
 
             if response.status_code == 200:
                 return response, None
 
-            if response.status_code == 503:
+            if response.status_code in [503, 500]:
                 wait = (2 ** attempt) + random.uniform(0, 1)
                 time.sleep(wait)
                 continue
 
             if response.status_code == 401:
                 return None, "API key is invalid. Please contact the administrator."
+
+            if response.status_code == 429:
+                return None, "Too many requests. Please wait a moment and try again."
 
             return None, f"Unexpected server error (HTTP {response.status_code}). Please try again."
 
@@ -444,9 +450,13 @@ def call_api(prompt, negative_prompt, ratio, style_key, seed):
             time.sleep((2 ** attempt) + random.uniform(0, 1))
             continue
 
+        except requests.exceptions.ConnectionError:
+            wait = (2 ** attempt) + random.uniform(0, 1)
+            time.sleep(wait)
+            continue
+
     return None, "Server is busy. Please try again in a few minutes."
-
-
+    
 def save_and_verify(response):
     image_bytes = b""
     for chunk in response.iter_content(chunk_size=65536):
