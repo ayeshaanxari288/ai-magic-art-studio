@@ -401,7 +401,7 @@ if "history" not in st.session_state:
 
 def call_api(prompt, negative_prompt, ratio, style_key, seed):
     # API key comes from Streamlit secrets — users never see it
-    api_key = st.secrets["STABILITY_API_KEY"]
+    api_key = "skzQyGnqarap56wDp3bXA9u4pnmIwhYI9FL6b2nZWyAg3JyPAH"
 
     style_value = STYLE_OPTIONS[style_key]
 
